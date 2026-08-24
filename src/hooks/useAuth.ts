@@ -44,30 +44,45 @@ export function useAuth() {
       setProfile(null);
       return;
     }
+
     let active = true;
+
     void (async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("profiles")
-        .select("id, username, display_name, avatar_url, is_admin")
+        .select("id, username, display_name, avatar_url, is_admin, bio, birth_date, age_verified, team_messages_opt_out, hidden_words, pause_link, viewer_mode, viewer_palette")
         .eq("id", user.id)
         .maybeSingle();
+
       if (!active) return;
-      if (data) {
+
+      if (error) {
+        console.warn("Profile fetch failed:", error.message);
+      }
+
+      if (data && data.id) {
         setProfile(data as WhisprProfile);
         return;
       }
+
       const fallbackUsername = `whisprer${user.id.replace(/-/g, "").slice(0, 6)}`;
-      const { data: created } = await supabase
+      const { data: created, error: insertError } = await supabase
         .from("profiles")
         .insert({
           id: user.id,
           username: fallbackUsername,
           display_name: user.email?.split("@")[0] ?? fallbackUsername,
         })
-        .select("id, username, display_name, avatar_url, is_admin")
+        .select("id, username, display_name, avatar_url, is_admin, bio, birth_date, age_verified, team_messages_opt_out, hidden_words, pause_link, viewer_mode, viewer_palette")
         .maybeSingle();
+
+      if (insertError) {
+        console.warn("Profile creation failed:", insertError.message);
+      }
+
       if (active && created) setProfile(created as WhisprProfile);
     })();
+
     return () => {
       active = false;
     };

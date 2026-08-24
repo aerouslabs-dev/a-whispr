@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PageShell } from "@/components/PageShell";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -50,8 +51,7 @@ function Home() {
   const { user, profile, loading } = useAuth();
   const [whispers, setWhispers] = useState<Whisper[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [selectedStory, setSelectedStory] = useState<Whisper | null>(null);
-  const [reactions, setReactions] = useState<Record<string, { emoji: string; count: number }[]>>({});
+  const [selectedStory, setSelectedStory] = useState<Whisper | null>(null);  const [activeAction, setActiveAction] = useState<"filters" | "replies" | "archive" | null>(null);  const [reactions, setReactions] = useState<Record<string, { emoji: string; count: number }[]>>({});
   const [stats, setStats] = useState({
     totalWhispers: 0,
     profileViews: null as number | null,
@@ -206,6 +206,50 @@ function Home() {
   return (
     <PageShell signedIn={!!user}>
       {selectedStory && <ShareCard whisper={selectedStory} onClose={() => setSelectedStory(null)} />}
+
+      <Dialog open={activeAction !== null} onOpenChange={(next) => !next && setActiveAction(null)}>
+        <DialogContent className="max-w-md rounded-[2rem] border-2 border-border bg-background">
+          <DialogHeader>
+            <DialogTitle>
+              {activeAction === "filters" && "Inbox filters"}
+              {activeAction === "replies" && "Quick replies"}
+              {activeAction === "archive" && "Archive & cleanup"}
+            </DialogTitle>
+            <DialogDescription>
+              {activeAction === "filters" && "Filter your inbox by mood, vibe, or intensity to find the whispers that matter most."}
+              {activeAction === "replies" && "Generate a polished response or save a few copy-paste comebacks for your next whisper."}
+              {activeAction === "archive" && "Review, delete, and sort older whispers so your inbox stays light and intentional."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 pt-2">
+            {activeAction === "filters" && (
+              <>
+                <div className="rounded-2xl border-2 border-dashed border-border bg-bubble/50 p-3 text-sm font-medium">Mood: romantic</div>
+                <div className="rounded-2xl border-2 border-dashed border-border bg-bubble/50 p-3 text-sm font-medium">Vibe: playful</div>
+                <div className="rounded-2xl border-2 border-dashed border-border bg-bubble/50 p-3 text-sm font-medium">Sensitive: hidden</div>
+              </>
+            )}
+
+            {activeAction === "replies" && (
+              <>
+                <div className="rounded-2xl border-2 border-dashed border-border bg-bubble/50 p-3 text-sm">“Aww, you really made my day 😭”</div>
+                <div className="rounded-2xl border-2 border-dashed border-border bg-bubble/50 p-3 text-sm">“You’re bold for sending that. I like it 😌”</div>
+                <div className="rounded-2xl border-2 border-dashed border-border bg-bubble/50 p-3 text-sm">“Cute, but this is a little too dramatic for me 😆”</div>
+              </>
+            )}
+
+            {activeAction === "archive" && (
+              <>
+                <div className="rounded-2xl border-2 border-dashed border-border bg-bubble/50 p-3 text-sm">Archive older whispers</div>
+                <div className="rounded-2xl border-2 border-dashed border-border bg-bubble/50 p-3 text-sm">Delete spam or duplicates</div>
+                <div className="rounded-2xl border-2 border-dashed border-border bg-bubble/50 p-3 text-sm">Keep only the ones with best replies</div>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <AnimatePresence>
         {announcements.map((a) => (
           <motion.div
@@ -319,14 +363,33 @@ function Home() {
 
           <section className="grid gap-4 md:grid-cols-3">
             {[
-              { title: "Inbox filters", body: "Sort by vibe or mood", icon: "🔎", color: "bg-sky-100 text-sky-900" },
-              { title: "Quick replies", body: "Send a classy comeback", icon: "💬", color: "bg-pink-100 text-pink-900" },
-              { title: "Archive & cleanup", body: "Delete or organize whispers", icon: "🗂️", color: "bg-lemon/80 text-foreground" },
+              {
+                title: "Inbox filters",
+                body: "Sort by vibe or mood",
+                icon: "🔎",
+                color: "bg-sky-100 text-sky-900",
+                action: "filters" as const,
+              },
+              {
+                title: "Quick replies",
+                body: "Send a classy comeback",
+                icon: "💬",
+                color: "bg-pink-100 text-pink-900",
+                action: "replies" as const,
+              },
+              {
+                title: "Archive & cleanup",
+                body: "Delete or organize whispers",
+                icon: "🗂️",
+                color: "bg-lemon/80 text-foreground",
+                action: "archive" as const,
+              },
             ].map((card) => (
               <motion.button
                 key={card.title}
                 type="button"
                 whileHover={{ y: -4 }}
+                onClick={() => setActiveAction(card.action)}
                 className="retro-window flex h-full flex-col items-start p-5 text-left"
               >
                 <span className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl text-xl ${card.color}`}>

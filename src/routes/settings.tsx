@@ -12,6 +12,7 @@ import { PageShell } from "@/components/PageShell";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { NglViewer } from "@/components/NglViewer";
+import { applyWhisprTheme, getStoredThemePreference } from "@/lib/theme";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -55,7 +56,8 @@ function SettingsPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setTheme(localStorage.getItem("whispr-theme") ?? "bubblegum");
+    const savedTheme = getStoredThemePreference();
+    setTheme(savedTheme);
     setMotionOn(localStorage.getItem("whispr-motion") !== "off");
     setTeamMessagesOptOut(localStorage.getItem("whispr-team-opt-out") === "on");
     setPauseLink(localStorage.getItem("whispr-pause-link") === "on");
@@ -63,37 +65,11 @@ function SettingsPage() {
     setBlockedUsers(localStorage.getItem("whispr-blocked-users") ?? "");
     setReportReason(localStorage.getItem("whispr-report-reason") ?? "");
     setViewerMode((localStorage.getItem("whispr-viewer-mode") as "cartoon" | "ball-stick" | "surface") ?? "cartoon");
+    applyWhisprTheme(savedTheme, localStorage.getItem("whispr-motion") !== "off");
   }, []);
 
   useEffect(() => {
-    if (typeof document === "undefined") return;
-
-    const root = document.documentElement;
-    root.classList.remove("theme-bubblegum", "theme-mint", "theme-peach");
-    root.classList.add(`theme-${theme}`);
-    root.dataset["whisprTheme"] = theme;
-    root.dataset["whisprMotion"] = motionOn ? "on" : "off";
-
-    if (theme === "bubblegum") {
-      root.style.setProperty("--background", "oklch(0.975 0.022 330)");
-      root.style.setProperty("--primary", "oklch(0.72 0.17 350)");
-      root.style.setProperty("--accent", "oklch(0.86 0.1 290)");
-      root.style.setProperty("--bubble", "oklch(0.93 0.07 340)");
-    }
-
-    if (theme === "mint") {
-      root.style.setProperty("--background", "oklch(0.965 0.045 165)");
-      root.style.setProperty("--primary", "oklch(0.68 0.17 170)");
-      root.style.setProperty("--accent", "oklch(0.85 0.09 200)");
-      root.style.setProperty("--bubble", "oklch(0.89 0.07 180)");
-    }
-
-    if (theme === "peach") {
-      root.style.setProperty("--background", "oklch(0.977 0.035 36)");
-      root.style.setProperty("--primary", "oklch(0.74 0.18 25)");
-      root.style.setProperty("--accent", "oklch(0.89 0.09 50)");
-      root.style.setProperty("--bubble", "oklch(0.92 0.06 35)");
-    }
+    applyWhisprTheme(theme, motionOn);
   }, [theme, motionOn]);
 
   useEffect(() => {
