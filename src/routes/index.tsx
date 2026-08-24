@@ -52,16 +52,45 @@ function Home() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [selectedStory, setSelectedStory] = useState<Whisper | null>(null);
   const [reactions, setReactions] = useState<Record<string, { emoji: string; count: number }[]>>({});
+  const [stats, setStats] = useState({
+    totalWhispers: 0,
+    profileViews: null as number | null,
+    favoriteTag: "No whispers yet",
+  });
 
   const loadWhispers = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase
+
+    const { data, count, error } = await supabase
       .from("whispers")
       .select(
         "id, content, vibe_tag, ai_reply, created_at, trivia_question, trivia_options, trivia_correct_index, hint_letter",
+        { count: "exact" },
       )
+      .eq("recipient_id", user.id)
       .order("created_at", { ascending: false });
-    setWhispers((data ?? []) as Whisper[]);
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+
+    const nextWhispers = (data ?? []) as Whisper[];
+    const favoriteTagMap = nextWhispers.reduce<Record<string, number>>((acc, whisper) => {
+      const tag = whisper.vibe_tag?.trim();
+      if (!tag) return acc;
+      acc[tag] = (acc[tag] ?? 0) + 1;
+      return acc;
+    }, {});
+
+    const topTag = Object.entries(favoriteTagMap).sort((a, b) => b[1] - a[1])[0];
+
+    setWhispers(nextWhispers);
+    setStats({
+      totalWhispers: count ?? nextWhispers.length,
+      profileViews: null,
+      favoriteTag: topTag ? `${topTag[0]} (${topTag[1]})` : "No data yet",
+    });
   }, [user]);
 
   useEffect(() => {
@@ -87,8 +116,15 @@ function Home() {
     return `${window.location.origin}/u/${username}`;
   }, [profile?.username]);
 
-  const stats = useMemo(() => {
-    const total = whispers.length;
+  const statsSummary = useMemo(() => {
+    if (whispers.length === 0) {
+      return {
+        totalWhispers: 0,
+        profileViews: null,
+        favoriteTag: "No data yet",
+      };
+    }
+
     const favoriteTag = whispers.reduce<Record<string, number>>((acc, whisper) => {
       const tag = whisper.vibe_tag?.trim();
       if (!tag) return acc;
@@ -98,11 +134,13 @@ function Home() {
     const topTag = Object.entries(favoriteTag).sort((a, b) => b[1] - a[1])[0];
 
     return {
-      totalWhispers: total,
-      profileViews: Math.max(128, total * 21 + 320),
-      favoriteTag: topTag ? `${topTag[0]} (${topTag[1]})` : "Mystery",
+      totalWhispers: whispers.length,
+      profileViews: null,
+      favoriteTag: topTag ? `${topTag[0]} (${topTag[1]})` : "No data yet",
     };
   }, [whispers]);
+
+  const effectiveStats = stats.totalWhispers > 0 || stats.favoriteTag !== "No whispers yet" ? stats : statsSummary;
 
   async function copyLink() {
     await navigator.clipboard.writeText(publicLink);
@@ -237,11 +275,15 @@ function Home() {
                   <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">
                     Daily glow-up
                   </p>
-                  <p className="mt-2 text-2xl font-extrabold candy-text">{stats.totalWhispers} whispers</p>
-                  <p className="mt-1 text-sm text-muted-foreground">Your inbox is buzzing with love and chaos.</p>
+                  <p className="mt-2 text-2xl font-extrabold candy-text">{effectiveStats.totalWhispers} whispers</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {effectiveStats.totalWhispers > 0
+                      ? "Your inbox is buzzing with love and chaos."
+                      : "Your inbox is ready — share your link to get the first whisper."}
+                  </p>
                   <div className="mt-4 flex items-center justify-between rounded-2xl bg-bubble px-3 py-2 text-sm">
                     <span className="font-semibold">Favorite vibe</span>
-                    <span>{stats.favoriteTag}</span>
+                    <span>{effectiveStats.favoriteTag}</span>
                   </div>
                 </div>
               </div>
@@ -251,17 +293,21 @@ function Home() {
           <section className="grid gap-4 md:grid-cols-3">
             <motion.div whileHover={{ y: -4 }} className="retro-window p-5">
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">Total whispers</p>
-              <p className="mt-3 text-3xl font-extrabold">{stats.totalWhispers}</p>
+              <p className="mt-3 text-3xl font-extrabold">{effectiveStats.totalWhispers}</p>
               <p className="mt-1 text-sm text-muted-foreground">Received so far</p>
             </motion.div>
             <motion.div whileHover={{ y: -4 }} className="retro-window p-5">
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">Profile views</p>
-              <p className="mt-3 text-3xl font-extrabold">{stats.profileViews}</p>
-              <p className="mt-1 text-sm text-muted-foreground">This month</p>
+              <p className="mt-3 text-3xl font-extrabold">
+                {effectiveStats.profileViews ?? "—"}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {effectiveStats.profileViews === null ? "Not tracked yet" : "This month"}
+              </p>
             </motion.div>
             <motion.div whileHover={{ y: -4 }} className="retro-window p-5">
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">Favorite tag</p>
-              <p className="mt-3 text-2xl font-extrabold">{stats.favoriteTag}</p>
+              <p className="mt-3 text-2xl font-extrabold">{effectiveStats.favoriteTag}</p>
               <p className="mt-1 text-sm text-muted-foreground">Your crowd favorite</p>
             </motion.div>
           </section>
