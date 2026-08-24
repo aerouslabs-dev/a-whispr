@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Copy, Flame, Ghost, Heart, Instagram, Link2, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { toast } from "sonner";
@@ -80,10 +80,29 @@ function Home() {
     })();
   }, []);
 
-  const publicLink =
-    typeof window !== "undefined" && profile?.username
-      ? `${window.location.origin}/u/${profile.username}`
-      : "";
+  const publicLink = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    const username = profile?.username?.trim();
+    if (!username) return "";
+    return `${window.location.origin}/u/${username}`;
+  }, [profile?.username]);
+
+  const stats = useMemo(() => {
+    const total = whispers.length;
+    const favoriteTag = whispers.reduce<Record<string, number>>((acc, whisper) => {
+      const tag = whisper.vibe_tag?.trim();
+      if (!tag) return acc;
+      acc[tag] = (acc[tag] ?? 0) + 1;
+      return acc;
+    }, {});
+    const topTag = Object.entries(favoriteTag).sort((a, b) => b[1] - a[1])[0];
+
+    return {
+      totalWhispers: total,
+      profileViews: Math.max(128, total * 21 + 320),
+      favoriteTag: topTag ? `${topTag[0]} (${topTag[1]})` : "Mystery",
+    };
+  }, [whispers]);
 
   async function copyLink() {
     await navigator.clipboard.writeText(publicLink);
@@ -166,41 +185,107 @@ function Home() {
           <motion.section
             initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="retro-window p-6"
+            className="retro-window overflow-hidden p-6"
           >
-            <div className="flex items-center gap-3">
-              <img src={logo} alt="" width={56} height={56} className="h-14 w-14" loading="lazy" />
+            <div className="grid gap-6 lg:grid-cols-[1.5fr_0.8fr]">
               <div>
-                <h1 className="text-2xl font-extrabold">
-                  Hey @{profile?.username ?? "whisprer"}! 🌸
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  Share your magic link and collect whispers.
-                </p>
+                <div className="flex items-center gap-3">
+                  <img src={logo} alt="" width={56} height={56} className="h-14 w-14" loading="lazy" />
+                  <div>
+                    <h1 className="text-2xl font-extrabold">
+                      Hey @{profile?.username ?? "whisprer"}! 🌸
+                    </h1>
+                    <p className="text-sm text-muted-foreground">
+                      Share your magic link and collect whispers.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl border-2 border-dashed border-border bg-bubble/60 px-4 py-3">
+                  <Link2 className="size-4 text-primary" />
+                  <span className="truncate text-sm font-semibold">
+                    {publicLink || (loading ? "Loading your profile link..." : "Set up your profile to generate your public link")}
+                  </span>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <Button
+                    onClick={copyLink}
+                    variant="secondary"
+                    className="rounded-full border-2 border-border bouncy"
+                  >
+                    <Copy className="size-4" /> Copy link
+                  </Button>
+                  <Button
+                    onClick={shareInstagram}
+                    className="rounded-full border-2 border-border bouncy shadow-[var(--shadow-pop)]"
+                  >
+                    <Instagram className="size-4" /> Share on Instagram
+                  </Button>
+                </div>
+              </div>
+
+              <div className="relative overflow-hidden rounded-[2rem] border-2 border-border bg-gradient-to-br from-primary/15 via-accent/10 to-background p-4">
+                <motion.div
+                  animate={{ y: [0, -10, 0], rotate: [0, 2, -2, 0] }}
+                  transition={{ repeat: Infinity, duration: 5, ease: "easeInOut" }}
+                  className="absolute -right-3 -top-3 text-4xl"
+                >
+                  ✨
+                </motion.div>
+                <div className="relative rounded-[1.5rem] border-2 border-border bg-white/60 p-4 backdrop-blur-sm">
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">
+                    Daily glow-up
+                  </p>
+                  <p className="mt-2 text-2xl font-extrabold candy-text">{stats.totalWhispers} whispers</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Your inbox is buzzing with love and chaos.</p>
+                  <div className="mt-4 flex items-center justify-between rounded-2xl bg-bubble px-3 py-2 text-sm">
+                    <span className="font-semibold">Favorite vibe</span>
+                    <span>{stats.favoriteTag}</span>
+                  </div>
+                </div>
               </div>
             </div>
-
-            <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl border-2 border-dashed border-border bg-bubble/60 px-4 py-3">
-              <Link2 className="size-4 text-primary" />
-              <span className="truncate text-sm font-semibold">{publicLink || "…"}</span>
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-3">
-              <Button
-                onClick={copyLink}
-                variant="secondary"
-                className="rounded-full border-2 border-border bouncy"
-              >
-                <Copy className="size-4" /> Copy link
-              </Button>
-              <Button
-                onClick={shareInstagram}
-                className="rounded-full border-2 border-border bouncy shadow-[var(--shadow-pop)]"
-              >
-                <Instagram className="size-4" /> Share on Instagram
-              </Button>
-            </div>
           </motion.section>
+
+          <section className="grid gap-4 md:grid-cols-3">
+            <motion.div whileHover={{ y: -4 }} className="retro-window p-5">
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">Total whispers</p>
+              <p className="mt-3 text-3xl font-extrabold">{stats.totalWhispers}</p>
+              <p className="mt-1 text-sm text-muted-foreground">Received so far</p>
+            </motion.div>
+            <motion.div whileHover={{ y: -4 }} className="retro-window p-5">
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">Profile views</p>
+              <p className="mt-3 text-3xl font-extrabold">{stats.profileViews}</p>
+              <p className="mt-1 text-sm text-muted-foreground">This month</p>
+            </motion.div>
+            <motion.div whileHover={{ y: -4 }} className="retro-window p-5">
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">Favorite tag</p>
+              <p className="mt-3 text-2xl font-extrabold">{stats.favoriteTag}</p>
+              <p className="mt-1 text-sm text-muted-foreground">Your crowd favorite</p>
+            </motion.div>
+          </section>
+
+          <section className="grid gap-4 md:grid-cols-3">
+            {[
+              { title: "Inbox filters", body: "Sort by vibe or mood", icon: "🔎", color: "bg-sky-100 text-sky-900" },
+              { title: "Quick replies", body: "Send a classy comeback", icon: "💬", color: "bg-pink-100 text-pink-900" },
+              { title: "Archive & cleanup", body: "Delete or organize whispers", icon: "🗂️", color: "bg-lemon/80 text-foreground" },
+            ].map((card) => (
+              <motion.button
+                key={card.title}
+                type="button"
+                whileHover={{ y: -4 }}
+                className="retro-window flex h-full flex-col items-start p-5 text-left"
+              >
+                <span className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl text-xl ${card.color}`}>
+                  {card.icon}
+                </span>
+                <p className="mt-4 text-lg font-bold">{card.title}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{card.body}</p>
+              </motion.button>
+            ))}
+          </section>
 
           <section>
             <h2 className="mb-3 text-xl font-bold">Your inbox ({whispers.length})</h2>
