@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { motion } from "motion/react";
-import { ExternalLink, Palette, Save } from "lucide-react";
+import { ExternalLink, Palette, Save, ShieldCheck, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { PageShell } from "@/components/PageShell";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { NglViewer } from "@/components/NglViewer";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -40,6 +41,14 @@ function SettingsPage() {
   const { user, profile } = useAuth();
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
+  const [birthDate, setBirthDate] = useState("");
+  const [ageVerified, setAgeVerified] = useState(false);
+  const [teamMessagesOptOut, setTeamMessagesOptOut] = useState(false);
+  const [hiddenWords, setHiddenWords] = useState("spam, scam, scammer");
+  const [blockedUsers, setBlockedUsers] = useState("");
+  const [reportReason, setReportReason] = useState("");
+  const [pauseLink, setPauseLink] = useState(false);
+  const [viewerMode, setViewerMode] = useState<"cartoon" | "ball-stick" | "surface">("cartoon");
   const [saving, setSaving] = useState(false);
   const [theme, setTheme] = useState<string>("bubblegum");
   const [motionOn, setMotionOn] = useState(true);
@@ -48,6 +57,12 @@ function SettingsPage() {
     if (typeof window === "undefined") return;
     setTheme(localStorage.getItem("whispr-theme") ?? "bubblegum");
     setMotionOn(localStorage.getItem("whispr-motion") !== "off");
+    setTeamMessagesOptOut(localStorage.getItem("whispr-team-opt-out") === "on");
+    setPauseLink(localStorage.getItem("whispr-pause-link") === "on");
+    setHiddenWords(localStorage.getItem("whispr-hidden-words") ?? "spam, scam, scammer");
+    setBlockedUsers(localStorage.getItem("whispr-blocked-users") ?? "");
+    setReportReason(localStorage.getItem("whispr-report-reason") ?? "");
+    setViewerMode((localStorage.getItem("whispr-viewer-mode") as "cartoon" | "ball-stick" | "surface") ?? "cartoon");
   }, []);
 
   useEffect(() => {
@@ -82,14 +97,39 @@ function SettingsPage() {
   }, [theme, motionOn]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("whispr-team-opt-out", teamMessagesOptOut ? "on" : "off");
+    localStorage.setItem("whispr-pause-link", pauseLink ? "on" : "off");
+    localStorage.setItem("whispr-hidden-words", hiddenWords);
+    localStorage.setItem("whispr-blocked-users", blockedUsers);
+    localStorage.setItem("whispr-report-reason", reportReason);
+    localStorage.setItem("whispr-viewer-mode", viewerMode);
+  }, [teamMessagesOptOut, pauseLink, hiddenWords, blockedUsers, reportReason, viewerMode]);
+
+  useEffect(() => {
     setDisplayName(profile?.display_name ?? "");
-  }, [profile?.display_name]);
+    setBirthDate(profile?.birth_date ?? "");
+    setAgeVerified(Boolean(profile?.age_verified));
+    setTeamMessagesOptOut(Boolean(profile?.team_messages_opt_out));
+    setPauseLink(Boolean(profile?.pause_link));
+    setHiddenWords((profile?.hidden_words ?? ["spam", "scam", "scammer"]).join(", "));
+  }, [profile]);
 
   useEffect(() => {
     if (!user) return;
     void (async () => {
-      const { data } = await supabase.from("profiles").select("bio").eq("id", user.id).maybeSingle();
+      const { data } = await supabase
+        .from("profiles")
+        .select("bio, birth_date, age_verified, team_messages_opt_out, hidden_words, pause_link, viewer_mode")
+        .eq("id", user.id)
+        .maybeSingle();
       setBio((data?.bio as string | null) ?? "");
+      setBirthDate((data?.birth_date as string | null) ?? "");
+      setAgeVerified(Boolean(data?.age_verified));
+      setTeamMessagesOptOut(Boolean(data?.team_messages_opt_out));
+      setPauseLink(Boolean(data?.pause_link));
+      setHiddenWords(((data?.hidden_words as string[] | null) ?? ["spam", "scam", "scammer"]).join(", "));
+      if (data && typeof data.viewer_mode === "string") setViewerMode(data.viewer_mode as "cartoon" | "ball-stick" | "surface");
     })();
   }, [user]);
 
@@ -107,23 +147,37 @@ function SettingsPage() {
   async function saveProfile() {
     if (!user) return;
     setSaving(true);
+    const hiddenValues = hiddenWords
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
     const { error } = await supabase
       .from("profiles")
-      .update({ display_name: displayName.trim() || null, bio: bio.trim() || null })
+      .update({
+        display_name: displayName.trim() || null,
+        bio: bio.trim() || null,
+        birth_date: birthDate || null,
+        age_verified: ageVerified,
+        team_messages_opt_out: teamMessagesOptOut,
+        hidden_words: hiddenValues,
+        pause_link: pauseLink,
+        viewer_mode: viewerMode,
+      })
       .eq("id", user.id);
     setSaving(false);
     if (error) {
       toast.error(error.message);
       return;
     }
-    toast.success("Profile saved 💖");
+    toast.success("Profile and safety settings saved 💖");
   }
 
   return (
     <PageShell signedIn={!!user}>
       <h1 className="text-3xl font-extrabold candy-text">Settings</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Make A Whispr feel like yours — colours, motion and your public profile.
+        Make A Whispr feel like yours — colours, motion, privacy and your public profile.
       </p>
 
       <div className="mt-6 space-y-6">
@@ -166,41 +220,147 @@ function SettingsPage() {
         </motion.section>
 
         {user && (
-          <section className="retro-window p-6">
-            <h2 className="text-xl font-bold">Your public profile</h2>
-            <p className="text-sm text-muted-foreground">
-              Shown on your page at /u/{profile?.username ?? "yourname"}
-            </p>
-            <div className="mt-4 space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="display">Display name</Label>
-                <Input
-                  id="display"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  className="rounded-2xl border-2"
-                />
+          <>
+            <section className="retro-window p-6">
+              <h2 className="flex items-center gap-2 text-xl font-bold">
+                <ShieldCheck className="size-5" /> Safety controls
+              </h2>
+              <div className="mt-4 space-y-4">
+                <div className="flex items-center justify-between rounded-2xl border-2 border-dashed border-border px-4 py-3">
+                  <div>
+                    <p className="font-bold">Team messages</p>
+                    <p className="text-xs text-muted-foreground">Hide platform announcements and labeled team updates.</p>
+                  </div>
+                  <Switch
+                    checked={teamMessagesOptOut}
+                    onCheckedChange={setTeamMessagesOptOut}
+                    aria-label="Toggle team messages"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between rounded-2xl border-2 border-dashed border-border px-4 py-3">
+                  <div>
+                    <p className="font-bold">Pause public link</p>
+                    <p className="text-xs text-muted-foreground">Temporarily hide your profile from new whispers.</p>
+                  </div>
+                  <Switch checked={pauseLink} onCheckedChange={setPauseLink} aria-label="Pause public link" />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="hiddenWords">Hidden words</Label>
+                  <Input
+                    id="hiddenWords"
+                    value={hiddenWords}
+                    onChange={(e) => setHiddenWords(e.target.value)}
+                    placeholder="spam, scam, scammer"
+                    className="rounded-2xl border-2"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="blockedUsers">Blocked usernames</Label>
+                  <Input
+                    id="blockedUsers"
+                    value={blockedUsers}
+                    onChange={(e) => setBlockedUsers(e.target.value)}
+                    placeholder="user1, user2, user3"
+                    className="rounded-2xl border-2"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="reportReason">Report note</Label>
+                  <Input
+                    id="reportReason"
+                    value={reportReason}
+                    onChange={(e) => setReportReason(e.target.value)}
+                    placeholder="Describe a flagged message or issue"
+                    className="rounded-2xl border-2"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="birthDate">Birth date</Label>
+                  <Input
+                    id="birthDate"
+                    type="date"
+                    value={birthDate}
+                    onChange={(e) => setBirthDate(e.target.value)}
+                    className="rounded-2xl border-2"
+                  />
+                </div>
+
+                <label className="flex items-start gap-3 rounded-2xl border-2 border-dashed border-border bg-bubble/50 p-3 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={ageVerified}
+                    onChange={(e) => setAgeVerified(e.target.checked)}
+                    className="mt-1 h-4 w-4 accent-primary"
+                  />
+                  <span>I confirm I am over 18 and consent to adult-only features.</span>
+                </label>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="bio">Bio</Label>
-                <Textarea
-                  id="bio"
-                  value={bio}
-                  onChange={(e) => setBio(e.target.value)}
-                  rows={3}
-                  placeholder="Send me something cute 🥺"
-                  className="rounded-2xl border-2"
-                />
+            </section>
+
+            <section className="retro-window p-6">
+              <h2 className="flex items-center gap-2 text-xl font-bold">
+                <Sparkles className="size-5" /> NGL viewer
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">Preview a molecule viewer with stage controls and styled primitive rendering.</p>
+              <div className="mt-4 space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="viewerMode">Renderer mode</Label>
+                  <select
+                    id="viewerMode"
+                    value={viewerMode}
+                    onChange={(e) => setViewerMode(e.target.value as "cartoon" | "ball-stick" | "surface")}
+                    className="w-full rounded-2xl border-2 border-border bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="cartoon">Cartoon</option>
+                    <option value="ball-stick">Ball + stick</option>
+                    <option value="surface">Surface</option>
+                  </select>
+                </div>
+                <NglViewer mode={viewerMode} />
               </div>
-              <Button
-                onClick={() => void saveProfile()}
-                disabled={saving}
-                className="rounded-full border-2 border-border bouncy shadow-[var(--shadow-pop)]"
-              >
-                <Save className="size-4" /> Save profile
-              </Button>
-            </div>
-          </section>
+            </section>
+
+            <section className="retro-window p-6">
+              <h2 className="text-xl font-bold">Your public profile</h2>
+              <p className="text-sm text-muted-foreground">
+                Shown on your page at /u/{profile?.username ?? "yourname"}
+              </p>
+              <div className="mt-4 space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="display">Display name</Label>
+                  <Input
+                    id="display"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    className="rounded-2xl border-2"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="bio">Bio</Label>
+                  <Textarea
+                    id="bio"
+                    value={bio}
+                    onChange={(e) => setBio(e.target.value)}
+                    rows={3}
+                    placeholder="Send me something cute 🥺"
+                    className="rounded-2xl border-2"
+                  />
+                </div>
+                <Button
+                  onClick={() => void saveProfile()}
+                  disabled={saving}
+                  className="rounded-full border-2 border-border bouncy shadow-[var(--shadow-pop)]"
+                >
+                  <Save className="size-4" /> Save profile
+                </Button>
+              </div>
+            </section>
+          </>
         )}
 
         <section className="retro-window bg-bubble/50 p-6 text-center">

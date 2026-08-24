@@ -31,6 +31,8 @@ function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
+  const [birthDate, setBirthDate] = useState("");
+  const [isAdult, setIsAdult] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -43,6 +45,19 @@ function AuthPage() {
     return () => sub.subscription.unsubscribe();
   }, [navigate]);
 
+  function calculateAge(dateString: string) {
+    const birthday = new Date(dateString);
+    const today = new Date();
+    let age = today.getFullYear() - birthday.getFullYear();
+    const monthDifference = today.getMonth() - birthday.getMonth();
+
+    if (monthDifference < 0 || (monthDifference === 0 && today.getDate() < birthday.getDate())) {
+      age -= 1;
+    }
+
+    return age;
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -50,12 +65,22 @@ function AuthPage() {
       if (mode === "signup") {
         const clean = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
         if (clean.length < 3) throw new Error("Pick a username with 3+ letters");
+        if (!birthDate) throw new Error("Add your date of birth to verify age.");
+        if (!isAdult || calculateAge(birthDate) < 18) {
+          throw new Error("You must be 18 or older to create an account.");
+        }
+
         const { error } = await supabase.auth.signUp({
           email,
           password,
           options: {
             emailRedirectTo: window.location.origin,
-            data: { username: clean, display_name: clean },
+            data: {
+              username: clean,
+              display_name: clean,
+              birth_date: birthDate,
+              age_verified: true,
+            },
           },
         });
         if (error) throw error;
@@ -97,17 +122,43 @@ function AuthPage() {
 
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
           {mode === "signup" && (
-            <div className="space-y-1.5">
-              <Label htmlFor="username">Username</Label>
-              <Input
-                id="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="cutiepie"
-                className="rounded-2xl border-2"
-                required
-              />
-            </div>
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="username">Username</Label>
+                <Input
+                  id="username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="cutiepie"
+                  className="rounded-2xl border-2"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="birthDate">Date of birth</Label>
+                <Input
+                  id="birthDate"
+                  type="date"
+                  value={birthDate}
+                  onChange={(e) => setBirthDate(e.target.value)}
+                  className="rounded-2xl border-2"
+                  required
+                />
+              </div>
+
+              <label className="flex items-start gap-3 rounded-2xl border-2 border-dashed border-border bg-bubble/50 p-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={isAdult}
+                  onChange={(e) => setIsAdult(e.target.checked)}
+                  className="mt-1 h-4 w-4 accent-primary"
+                />
+                <span>
+                  I confirm I am 18+ and understand this platform is for adult users only.
+                </span>
+              </label>
+            </>
           )}
           <div className="space-y-1.5">
             <Label htmlFor="email">Email</Label>

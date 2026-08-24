@@ -98,6 +98,11 @@ function Home() {
   }, [loadWhispers]);
 
   useEffect(() => {
+    if (profile?.team_messages_opt_out) {
+      setAnnouncements([]);
+      return;
+    }
+
     void (async () => {
       const { data } = await supabase
         .from("announcements")
@@ -107,7 +112,7 @@ function Home() {
         .limit(3);
       setAnnouncements((data ?? []) as Announcement[]);
     })();
-  }, []);
+  }, [profile?.team_messages_opt_out]);
 
   const publicLink = useMemo(() => {
     if (typeof window === "undefined") return "";

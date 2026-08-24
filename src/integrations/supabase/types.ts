@@ -338,46 +338,67 @@ export type Database = {
       }
       profiles: {
         Row: {
+          age_verified: boolean | null
           avatar_url: string | null
           bio: string | null
+          birth_date: string | null
           cover_url: string | null
           created_at: string
           display_name: string | null
           favorite_cuisines: string[]
+          hidden_words: string[] | null
           id: string
           is_admin: boolean
+          pause_link: boolean | null
           points: number
           status: string
+          team_messages_opt_out: boolean | null
           updated_at: string
           username: string | null
+          viewer_mode: string | null
+          viewer_palette: string | null
         }
         Insert: {
+          age_verified?: boolean | null
           avatar_url?: string | null
           bio?: string | null
+          birth_date?: string | null
           cover_url?: string | null
           created_at?: string
           display_name?: string | null
           favorite_cuisines?: string[]
+          hidden_words?: string[] | null
           id: string
           is_admin?: boolean
+          pause_link?: boolean | null
           points?: number
           status?: string
+          team_messages_opt_out?: boolean | null
           updated_at?: string
           username?: string | null
+          viewer_mode?: string | null
+          viewer_palette?: string | null
         }
         Update: {
+          age_verified?: boolean | null
           avatar_url?: string | null
           bio?: string | null
+          birth_date?: string | null
           cover_url?: string | null
           created_at?: string
           display_name?: string | null
           favorite_cuisines?: string[]
+          hidden_words?: string[] | null
           id?: string
           is_admin?: boolean
+          pause_link?: boolean | null
           points?: number
           status?: string
+          team_messages_opt_out?: boolean | null
           updated_at?: string
           username?: string | null
+          viewer_mode?: string | null
+          viewer_palette?: string | null
         }
         Relationships: []
       }

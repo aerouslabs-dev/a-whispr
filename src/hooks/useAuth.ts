@@ -8,6 +8,13 @@ export type WhisprProfile = {
   display_name: string | null;
   avatar_url: string | null;
   is_admin: boolean;
+  age_verified?: boolean | null;
+  birth_date?: string | null;
+  team_messages_opt_out?: boolean | null;
+  hidden_words?: string[] | null;
+  pause_link?: boolean | null;
+  viewer_mode?: string | null;
+  viewer_palette?: string | null;
 };
 
 export function useAuth() {
