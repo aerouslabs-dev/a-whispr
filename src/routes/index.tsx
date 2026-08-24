@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Copy, Flame, Ghost, Heart, Instagram, Link2, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { Copy, Instagram, Link2, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -47,54 +47,100 @@ type Whisper = {
 
 type Announcement = { id: string; title: string; body: string };
 
+type ReactionEntry = { emoji: string; count: number };
+
+type DashboardStats = {
+  totalWhispers: number;
+  profileViews: number | null;
+  favoriteTag: string;
+};
+
+type MoodInfo = { label: string; className: string };
+
+type ActiveAction = "filters" | "replies" | "archive" | null;
+
+const DEFAULT_REACTIONS: ReactionEntry[] = [
+  { emoji: "🔥", count: 0 },
+  { emoji: "💀", count: 0 },
+  { emoji: "🥹", count: 0 },
+  { emoji: "❤️", count: 0 },
+];
+
+const MOOD_RULES: { pattern: RegExp; label: string; className: string }[] = [
+  { pattern: /(love|miss|crush|cute|heart|honey|baby)/i, label: "Romantic", className: "bg-pink-100 text-pink-900" },
+  { pattern: /(lol|haha|roast|meme|funny|jk|lmao)/i, label: "Funny", className: "bg-yellow-100 text-yellow-900" },
+  { pattern: /(spicy|hot|flirty|tease|fire|drama)/i, label: "Spicy", className: "bg-rose-100 text-rose-900" },
+];
+
+function getMood(content: string): MoodInfo {
+  for (const rule of MOOD_RULES) {
+    if (rule.pattern.test(content)) {
+      return { label: rule.label, className: rule.className };
+    }
+  }
+  return { label: "Sad", className: "bg-sky-100 text-sky-900" };
+}
+
+function computeStats(whispers: Whisper[]): DashboardStats {
+  if (whispers.length === 0) {
+    return { totalWhispers: 0, profileViews: null, favoriteTag: "No whispers yet" };
+  }
+
+  const tagCounts = new Map<string, number>();
+  for (const whisper of whispers) {
+    const tag = whisper.vibe_tag?.trim();
+    if (!tag) continue;
+    tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+  }
+
+  let favoriteTag = "No data yet";
+  let topCount = 0;
+  for (const [tag, count] of tagCounts) {
+    if (count > topCount) {
+      favoriteTag = `${tag} (${count})`;
+      topCount = count;
+    }
+  }
+
+  return { totalWhispers: whispers.length, profileViews: null, favoriteTag };
+}
+
 function Home() {
   const { user, profile, loading } = useAuth();
   const [whispers, setWhispers] = useState<Whisper[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [selectedStory, setSelectedStory] = useState<Whisper | null>(null);  const [activeAction, setActiveAction] = useState<"filters" | "replies" | "archive" | null>(null);  const [reactions, setReactions] = useState<Record<string, { emoji: string; count: number }[]>>({});
-  const [stats, setStats] = useState({
-    totalWhispers: 0,
-    profileViews: null as number | null,
-    favoriteTag: "No whispers yet",
-  });
+  const [selectedStory, setSelectedStory] = useState<Whisper | null>(null);
+  const [activeAction, setActiveAction] = useState<ActiveAction>(null);
+  const [reactions, setReactions] = useState<Record<string, ReactionEntry[]>>({});
 
-  const loadWhispers = useCallback(async () => {
-    if (!user) return;
+  const loadWhispers = useCallback(async (): Promise<Whisper[] | null> => {
+    if (!user) return null;
 
-    const { data, count, error } = await supabase
+    const { data, error } = await supabase
       .from("whispers")
       .select(
         "id, content, vibe_tag, ai_reply, created_at, trivia_question, trivia_options, trivia_correct_index, hint_letter",
-        { count: "exact" },
       )
       .eq("recipient_id", user.id)
       .order("created_at", { ascending: false });
 
     if (error) {
       toast.error(error.message);
-      return;
+      return null;
     }
 
-    const nextWhispers = (data ?? []) as Whisper[];
-    const favoriteTagMap = nextWhispers.reduce<Record<string, number>>((acc, whisper) => {
-      const tag = whisper.vibe_tag?.trim();
-      if (!tag) return acc;
-      acc[tag] = (acc[tag] ?? 0) + 1;
-      return acc;
-    }, {});
-
-    const topTag = Object.entries(favoriteTagMap).sort((a, b) => b[1] - a[1])[0];
-
-    setWhispers(nextWhispers);
-    setStats({
-      totalWhispers: count ?? nextWhispers.length,
-      profileViews: null,
-      favoriteTag: topTag ? `${topTag[0]} (${topTag[1]})` : "No data yet",
-    });
+    return (data ?? []) as Whisper[];
   }, [user]);
 
   useEffect(() => {
-    void loadWhispers();
+    let cancelled = false;
+    void (async () => {
+      const result = await loadWhispers();
+      if (!cancelled && result) setWhispers(result);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [loadWhispers]);
 
   useEffect(() => {
@@ -103,15 +149,27 @@ function Home() {
       return;
     }
 
+    let cancelled = false;
     void (async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("announcements")
         .select("id, title, body")
         .eq("active", true)
         .order("created_at", { ascending: false })
         .limit(3);
+
+      if (cancelled) return;
+      if (error) {
+        console.error(error);
+        toast.error("Couldn't load announcements");
+        return;
+      }
       setAnnouncements((data ?? []) as Announcement[]);
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [profile?.team_messages_opt_out]);
 
   const publicLink = useMemo(() => {
@@ -121,40 +179,24 @@ function Home() {
     return `${window.location.origin}/u/${username}`;
   }, [profile?.username]);
 
-  const statsSummary = useMemo(() => {
-    if (whispers.length === 0) {
-      return {
-        totalWhispers: 0,
-        profileViews: null,
-        favoriteTag: "No data yet",
-      };
-    }
-
-    const favoriteTag = whispers.reduce<Record<string, number>>((acc, whisper) => {
-      const tag = whisper.vibe_tag?.trim();
-      if (!tag) return acc;
-      acc[tag] = (acc[tag] ?? 0) + 1;
-      return acc;
-    }, {});
-    const topTag = Object.entries(favoriteTag).sort((a, b) => b[1] - a[1])[0];
-
-    return {
-      totalWhispers: whispers.length,
-      profileViews: null,
-      favoriteTag: topTag ? `${topTag[0]} (${topTag[1]})` : "No data yet",
-    };
-  }, [whispers]);
-
-  const effectiveStats = stats.totalWhispers > 0 || stats.favoriteTag !== "No whispers yet" ? stats : statsSummary;
+  // Single source of truth — recalculates automatically whenever `whispers`
+  // changes (initial load, delete, or any future add/edit).
+  const stats = useMemo(() => computeStats(whispers), [whispers]);
 
   async function copyLink() {
-    await navigator.clipboard.writeText(publicLink);
-    toast.success("Link copied! Go paste it everywhere 💕");
+    if (!publicLink) return;
+    try {
+      await navigator.clipboard.writeText(publicLink);
+      toast.success("Link copied! Go paste it everywhere 💕");
+    } catch (error) {
+      console.error(error);
+      toast.error("Couldn't copy the link — please copy it manually.");
+    }
   }
 
   async function shareInstagram() {
     const text = `Send me an anonymous whisper 💌 ${publicLink}`;
-    const igStory = `instagram-stories://share?source_application=awhispr`;
+    const igStory = "instagram-stories://share?source_application=awhispr";
     try {
       if (typeof navigator !== "undefined" && navigator.share) {
         await navigator.share({ title: "A Whispr", text, url: publicLink });
@@ -164,8 +206,13 @@ function Home() {
       toast.success("Link copied — opening Instagram!");
       window.location.href = igStory;
       setTimeout(() => window.open("https://www.instagram.com/", "_blank"), 900);
-    } catch {
-      /* user dismissed the share sheet */
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        // User dismissed the native share sheet — not an error.
+        return;
+      }
+      console.error(error);
+      toast.error("Couldn't share — please copy the link instead.");
     }
   }
 
@@ -175,26 +222,21 @@ function Home() {
       toast.error(error.message);
       return;
     }
-    setWhispers((prev) => prev.filter((w) => w.id !== id));
-    toast.success("Whisper deleted");
-  }
 
-  function getMoodClass(text: string) {
-    const lower = text.toLowerCase();
-    if (/(love|miss|crush|cute|heart|honey|baby)/.test(lower)) return "bg-pink-100 text-pink-900";
-    if (/(lol|haha|roast|meme|funny|jk|lmao)/.test(lower)) return "bg-yellow-100 text-yellow-900";
-    if (/(spicy|hot|flirty|tease|fire|drama)/.test(lower)) return "bg-rose-100 text-rose-900";
-    return "bg-sky-100 text-sky-900";
+    setWhispers((prev) => prev.filter((w) => w.id !== id));
+    setReactions((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setSelectedStory((prev) => (prev?.id === id ? null : prev));
+    toast.success("Whisper deleted");
   }
 
   function reactToWhisper(id: string, emoji: string) {
     setReactions((prev) => {
-      const current = prev[id] ?? [
-        { emoji: "🔥", count: 0 },
-        { emoji: "💀", count: 0 },
-        { emoji: "🥹", count: 0 },
-        { emoji: "❤️", count: 0 },
-      ];
+      const current = prev[id] ?? DEFAULT_REACTIONS;
       const next = current.map((entry) =>
         entry.emoji === emoji ? { ...entry, count: entry.count + 1 } : entry,
       );
@@ -324,15 +366,15 @@ function Home() {
                   <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">
                     Daily glow-up
                   </p>
-                  <p className="mt-2 text-2xl font-extrabold candy-text">{effectiveStats.totalWhispers} whispers</p>
+                  <p className="mt-2 text-2xl font-extrabold candy-text">{stats.totalWhispers} whispers</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {effectiveStats.totalWhispers > 0
+                    {stats.totalWhispers > 0
                       ? "Your inbox is buzzing with love and chaos."
                       : "Your inbox is ready — share your link to get the first whisper."}
                   </p>
                   <div className="mt-4 flex items-center justify-between rounded-2xl bg-bubble px-3 py-2 text-sm">
                     <span className="font-semibold">Favorite vibe</span>
-                    <span>{effectiveStats.favoriteTag}</span>
+                    <span>{stats.favoriteTag}</span>
                   </div>
                 </div>
               </div>
@@ -342,21 +384,21 @@ function Home() {
           <section className="grid gap-4 md:grid-cols-3">
             <motion.div whileHover={{ y: -4 }} className="retro-window p-5">
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">Total whispers</p>
-              <p className="mt-3 text-3xl font-extrabold">{effectiveStats.totalWhispers}</p>
+              <p className="mt-3 text-3xl font-extrabold">{stats.totalWhispers}</p>
               <p className="mt-1 text-sm text-muted-foreground">Received so far</p>
             </motion.div>
             <motion.div whileHover={{ y: -4 }} className="retro-window p-5">
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">Profile views</p>
               <p className="mt-3 text-3xl font-extrabold">
-                {effectiveStats.profileViews ?? "—"}
+                {stats.profileViews ?? "—"}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                {effectiveStats.profileViews === null ? "Not tracked yet" : "This month"}
+                {stats.profileViews === null ? "Not tracked yet" : "This month"}
               </p>
             </motion.div>
             <motion.div whileHover={{ y: -4 }} className="retro-window p-5">
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">Favorite tag</p>
-              <p className="mt-3 text-2xl font-extrabold">{effectiveStats.favoriteTag}</p>
+              <p className="mt-3 text-2xl font-extrabold">{stats.favoriteTag}</p>
               <p className="mt-1 text-sm text-muted-foreground">Your crowd favorite</p>
             </motion.div>
           </section>
@@ -411,65 +453,64 @@ function Home() {
               </Card>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2">
-                {whispers.map((w, i) => (
-                  <motion.div
-                    key={w.id}
-                    initial={{ opacity: 0, y: 16 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.04 }}
-                    className="retro-window p-5"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge className="rounded-full border-2 border-border bg-accent text-accent-foreground">
-                          {w.vibe_tag ?? "Mystery"}
-                        </Badge>
-                        <Badge className={getMoodClass(w.content)}>{w.content.toLowerCase().includes("love") ? "Romantic" : w.content.toLowerCase().includes("lol") ? "Funny" : w.content.toLowerCase().includes("hot") ? "Spicy" : "Sad"}</Badge>
-                      </div>
-                      <button
-                        onClick={() => void removeWhisper(w.id)}
-                        aria-label="Delete whisper"
-                        className="text-muted-foreground transition-colors hover:text-destructive"
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
-                    </div>
-                    <p className="mt-3 whitespace-pre-wrap text-base font-medium">{w.content}</p>
-                    {w.ai_reply && (
-                      <p className="mt-3 rounded-2xl bg-bubble px-3 py-2 text-sm text-bubble-foreground">
-                        <Wand2 className="mr-1 inline size-3" /> {w.ai_reply}
-                      </p>
-                    )}
-                    <TriviaHint whisper={w} />
-                    <div className="mt-4 flex flex-wrap items-center gap-2">
-                      {[
-                        { emoji: "🔥", label: "Fire" },
-                        { emoji: "💀", label: "Dead" },
-                        { emoji: "🥹", label: "Touched" },
-                        { emoji: "❤️", label: "Love" },
-                      ].map(({ emoji, label }) => (
+                {whispers.map((w, i) => {
+                  const mood = getMood(w.content);
+                  const whisperReactions = reactions[w.id] ?? DEFAULT_REACTIONS;
+                  return (
+                    <motion.div
+                      key={w.id}
+                      initial={{ opacity: 0, y: 16 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.04 }}
+                      className="retro-window p-5"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge className="rounded-full border-2 border-border bg-accent text-accent-foreground">
+                            {w.vibe_tag ?? "Mystery"}
+                          </Badge>
+                          <Badge className={mood.className}>{mood.label}</Badge>
+                        </div>
                         <button
-                          key={emoji}
-                          type="button"
-                          onClick={() => reactToWhisper(w.id, emoji)}
-                          className="group inline-flex items-center gap-2 rounded-full border-2 border-border bg-background px-2.5 py-1.5 text-xs font-semibold transition-transform hover:-translate-y-0.5"
-                          aria-label={`React ${label}`}
+                          onClick={() => void removeWhisper(w.id)}
+                          aria-label="Delete whisper"
+                          className="text-muted-foreground transition-colors hover:text-destructive"
                         >
-                          <span className="text-base transition-transform duration-200 group-hover:scale-125">{emoji}</span>
-                          <span>{reactions[w.id]?.find((r) => r.emoji === emoji)?.count ?? 0}</span>
+                          <Trash2 className="size-4" />
                         </button>
-                      ))}
-                    </div>
-                    <div className="mt-4 flex items-center justify-between gap-2">
-                      <Button type="button" size="sm" variant="secondary" onClick={() => setSelectedStory(w)} className="rounded-full border-2 border-border">
-                        Answer
-                      </Button>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(w.created_at).toLocaleString()}
-                      </p>
-                    </div>
-                  </motion.div>
-                ))}
+                      </div>
+                      <p className="mt-3 whitespace-pre-wrap text-base font-medium">{w.content}</p>
+                      {w.ai_reply && (
+                        <p className="mt-3 rounded-2xl bg-bubble px-3 py-2 text-sm text-bubble-foreground">
+                          <Wand2 className="mr-1 inline size-3" /> {w.ai_reply}
+                        </p>
+                      )}
+                      <TriviaHint whisper={w} />
+                      <div className="mt-4 flex flex-wrap items-center gap-2">
+                        {whisperReactions.map(({ emoji, count }) => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => reactToWhisper(w.id, emoji)}
+                            className="group inline-flex items-center gap-2 rounded-full border-2 border-border bg-background px-2.5 py-1.5 text-xs font-semibold transition-transform hover:-translate-y-0.5"
+                            aria-label={`React ${emoji}`}
+                          >
+                            <span className="text-base transition-transform duration-200 group-hover:scale-125">{emoji}</span>
+                            <span>{count}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <div className="mt-4 flex items-center justify-between gap-2">
+                        <Button type="button" size="sm" variant="secondary" onClick={() => setSelectedStory(w)} className="rounded-full border-2 border-border">
+                          Answer
+                        </Button>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(w.created_at).toLocaleString()}
+                        </p>
+                      </div>
+                    </motion.div>
+                  );
+                })}
               </div>
             )}
           </section>
